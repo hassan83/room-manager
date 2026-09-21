@@ -6,17 +6,28 @@ let staffList = [];
 // セッションごとのアラーム停止状態。
 // 「1コール」と「時間超過」は別フェーズとして扱い、それぞれ独立にストップボタンで止められる。
 // フェーズが変わる（1コール→時間超過）と自動的に再度鳴り始める。
-const alarmSilence = new Map(); // session_id -> { warning: boolean, overtime: boolean }
+// warningAckAt: 1コールのアラームを実際に止めた時刻（止めるまでは退室までの残り時間を進めないために使う）
+const alarmSilence = new Map(); // session_id -> { warning: boolean, overtime: boolean, warningAckAt: Date|null }
 
 function getAlarmSilence(sessionId) {
   if (!alarmSilence.has(sessionId)) {
-    alarmSilence.set(sessionId, { warning: false, overtime: false });
+    alarmSilence.set(sessionId, { warning: false, overtime: false, warningAckAt: null });
   }
   return alarmSilence.get(sessionId);
 }
 
 function clearAlarmSilence(sessionId) {
   alarmSilence.delete(sessionId);
+}
+
+// 1コールのアラームを止めるまでは「退室まで」の残り時間を進めない（止めた時点を起点に、
+// 退室フェーズ本来の長さ分だけ、そこから改めてカウントを始める）
+function getEffectiveCheckoutRemainingMs(warningAt, end, now, silence) {
+  const phaseDurationMs = end - warningAt;
+  if (now <= warningAt) return phaseDurationMs; // 1コール前は退室フェーズの長さをそのまま表示
+  if (!silence.warningAckAt) return phaseDurationMs; // 1コール到達後、止めるまでは進めずに固定
+  const effectiveEnd = new Date(silence.warningAckAt.getTime() + phaseDurationMs);
+  return effectiveEnd - now;
 }
 
 // 退室ボタンの2段階確認（誤操作防止のため、1回目は確認メッセージに変わるだけで、
@@ -317,9 +328,13 @@ function computeRoomState(room) {
   if (room.status === 'vacant') return 'vacant';
   if (room.status === 'waiting') return 'waiting';
   const now = new Date();
-  if (new Date(room.session.planned_end_at) - now <= 0) return 'overtime';
-  if (new Date(room.session.planned_warning_at) - now <= 0) return 'warning';
-  return 'in_use';
+  const warningAt = new Date(room.session.planned_warning_at);
+  if (warningAt - now > 0) return 'in_use';
+  // 1コール到達後：1コールのアラームを止めるまでは「時間超過」に進めない
+  const end = new Date(room.session.planned_end_at);
+  const silence = getAlarmSilence(room.session.session_id);
+  const effectiveRemainingMs = getEffectiveCheckoutRemainingMs(warningAt, end, now, silence);
+  return effectiveRemainingMs <= 0 ? 'overtime' : 'warning';
 }
 
 function renderRooms() {
@@ -378,31 +393,30 @@ function renderRoomCard(room) {
   const now = new Date();
   // 1コール時刻を境に「前半（1コールまで）」「後半（1コール〜退室）」の2区間で管理する
   const warningRemainingMs = warningAt - now;
-  const checkoutRemainingMs = end - now;
+  // 現在のフェーズでアラームが鳴っている（＝ストップボタンが押されていない）かどうか
+  const silence = getAlarmSilence(session.session_id);
+  // 退室までの残り：1コールのアラームを止めるまでは進めず、止めた時点から改めてカウントする
+  const checkoutRemainingMs = getEffectiveCheckoutRemainingMs(warningAt, end, now, silence);
 
   let phaseTotalMs, phaseElapsedMs;
   if (state === 'in_use') {
     phaseTotalMs = warningAt - start;
     phaseElapsedMs = now - start;
   } else {
+    // 1コール到達後：アラームを止めるまでは進捗を100%で止めておき、止めた時点から改めて進める
     phaseTotalMs = end - warningAt;
-    phaseElapsedMs = now - warningAt;
+    phaseElapsedMs = silence.warningAckAt ? (now - silence.warningAckAt) : phaseTotalMs;
   }
   const progressPct = Math.min(100, Math.max(0, (phaseElapsedMs / phaseTotalMs) * 100));
 
-  // 現在のフェーズでアラームが鳴っている（＝ストップボタンが押されていない）かどうか
-  const silence = getAlarmSilence(session.session_id);
   const isAlarming = (state === 'warning' && !silence.warning) || (state === 'overtime' && !silence.overtime);
 
   // 1コールまでの残り：0を下回ったら0で固定表示
   const warningLabel = formatRemaining(Math.max(0, warningRemainingMs));
-  // 退室までの残り：1コールに達するまでは退室フェーズの長さ（1コール〜退室の区間）を固定表示し、
-  // 達したらそこから実際のカウントダウンを開始する。1コールの調整だけではこの区間の長さは変わらない
-  const checkoutLabel = warningRemainingMs > 0
-    ? formatRemaining(end - warningAt)
-    : checkoutRemainingMs <= 0
-      ? `+${formatRemaining(checkoutRemainingMs)}`
-      : formatRemaining(checkoutRemainingMs);
+  // 退室までの残り：0を下回ったら「+経過時間」で表示
+  const checkoutLabel = checkoutRemainingMs <= 0
+    ? `+${formatRemaining(checkoutRemainingMs)}`
+    : formatRemaining(checkoutRemainingMs);
   const warningItemClass = warningRemainingMs > 0 ? 'is-active' : 'is-muted';
   const checkoutItemClass = warningRemainingMs > 0 ? 'is-muted' : 'is-active';
 
@@ -472,8 +486,13 @@ document.getElementById('roomGrid').addEventListener('click', async (e) => {
     } else if (action === 'stop-alarm') {
       const sessionId = Number(btn.dataset.sessionId);
       const silence = getAlarmSilence(sessionId);
-      if (btn.dataset.target === 'warning') silence.warning = true;
-      else if (btn.dataset.target === 'overtime') silence.overtime = true;
+      if (btn.dataset.target === 'warning') {
+        silence.warning = true;
+        // 止めた時点を起点に、退室までの残り時間のカウントを開始する
+        silence.warningAckAt = new Date();
+      } else if (btn.dataset.target === 'overtime') {
+        silence.overtime = true;
+      }
       renderRooms(); // 次の1秒を待たずにボタンを即座に消す
     } else if (action === 'checkout') {
       const sessionId = Number(btn.dataset.sessionId);
@@ -489,15 +508,23 @@ document.getElementById('roomGrid').addEventListener('click', async (e) => {
       clearAlarmSilence(sessionId);
       await loadRooms();
     } else if (action === 'adjust-time') {
-      await apiFetch(`/api/sessions/${btn.dataset.sessionId}/adjust-time`, {
+      const sessionId = Number(btn.dataset.sessionId);
+      const target = btn.dataset.target;
+      await apiFetch(`/api/sessions/${sessionId}/adjust-time`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ minutes: Number(btn.dataset.minutes), target: btn.dataset.target }),
+        body: JSON.stringify({ minutes: Number(btn.dataset.minutes), target }),
       });
-      // 時間変更後、1コール・時間超過のタイミングが変わるためアラームの停止状態をリセットする
-      clearAlarmSilence(Number(btn.dataset.sessionId));
+      if (target === 'warning') {
+        // 1コールの時刻自体が変わるため、1コール・退室どちらのアラーム状態もリセットする
+        clearAlarmSilence(sessionId);
+      } else {
+        // 退室（時間超過）の時刻のみ変わるため、時間超過アラームの停止状態だけリセットする。
+        // 1コールをすでに止めている場合は、その状態（退室までのカウント開始時刻）は維持する
+        getAlarmSilence(sessionId).overtime = false;
+      }
       // 時間調整した場合は退室するつもりがなくなったとみなし、確認待ち状態も解除する
-      clearCheckoutConfirmPending(Number(btn.dataset.sessionId));
+      clearCheckoutConfirmPending(sessionId);
       await loadRooms();
     }
   } catch (err) {
