@@ -157,9 +157,9 @@ select, input[type="text"], input[type="date"], input[type="number"] {
   gap: 10px;
 }
 .brand-icon {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
 }
 .clock {
   font-size: 22px;
