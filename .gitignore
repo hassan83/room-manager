@@ -1,0 +1,5 @@
+node_modules/
+data.db
+.DS_Store
+room-manager-windows-setup.zip
+windows-setup/app/

@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>部屋管理ボード</title>
+<link rel="stylesheet" href="style.css">
+<script>
+  (function () {
+    var saved = localStorage.getItem('theme');
+    var theme = saved || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    document.documentElement.setAttribute('data-theme', theme);
+  })();
+</script>
+</head>
+<body>
+
+  <header class="topbar">
+    <div class="clock" id="clock">--:--</div>
+    <div class="topbar-buttons">
+      <button id="btnThemeToggle" aria-label="ダークモード切り替え">🌙</button>
+      <button id="btnSettings">⚙️ 設定</button>
+      <button id="btnHistory">履歴・CSV</button>
+      <button id="btnAdmin">マスタ管理</button>
+      <button id="btnCheckin" class="btn-primary">＋ 入室登録</button>
+    </div>
+  </header>
+
+  <main>
+    <div id="roomGrid" class="room-grid"></div>
+  </main>
+
+  <!-- 入室登録モーダル -->
+  <div id="checkinOverlay" class="overlay hidden">
+    <div class="modal">
+      <h2>入室登録</h2>
+      <label>部屋</label>
+      <select id="checkinRoom"></select>
+      <label>担当スタッフ</label>
+      <select id="checkinStaff"></select>
+      <label>利用時間（分）</label>
+      <input type="number" id="checkinDuration" min="1" step="1" value="60" placeholder="例: 60">
+      <p class="error" id="checkinError"></p>
+      <div class="modal-actions">
+        <button id="checkinCancel">キャンセル</button>
+        <button id="checkinSubmit" class="btn-primary">登録</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 設定モーダル -->
+  <div id="settingsOverlay" class="overlay hidden">
+    <div class="modal">
+      <h2>設定</h2>
+      <label>音量</label>
+      <div class="volume-control">
+        <span id="volumeIcon" aria-hidden="true">🔊</span>
+        <input type="range" id="volumeSlider" min="0" max="200" step="1" aria-label="アラーム音量">
+        <input type="number" id="volumeNumber" min="0" max="200" step="1" aria-label="アラーム音量（数値入力）">
+        <span class="volume-unit">%</span>
+      </div>
+      <label>通知音の種類（1コール）</label>
+      <div class="sound-type-row">
+        <select id="soundTypeWarning">
+          <option value="classic">ピー（クラシック）</option>
+          <option value="double">ピコン（2音）</option>
+          <option value="buzzer">ブザー（低音）</option>
+          <option value="chime">チャイム（明るい音）</option>
+          <option value="success1">成功音</option>
+          <option value="warning1">警告音1</option>
+          <option value="roulette-flash1">ルーレット点滅音</option>
+        </select>
+        <button id="soundTypeWarningTest" type="button">🔊 試聴</button>
+      </div>
+      <label>通知音の種類（退室）</label>
+      <div class="sound-type-row">
+        <select id="soundTypeOvertime">
+          <option value="classic">ピー（クラシック）</option>
+          <option value="double">ピコン（2音）</option>
+          <option value="buzzer">ブザー（低音）</option>
+          <option value="chime">チャイム（明るい音）</option>
+          <option value="success1">成功音</option>
+          <option value="warning1">警告音1</option>
+          <option value="roulette-flash1">ルーレット点滅音</option>
+        </select>
+        <button id="soundTypeOvertimeTest" type="button">🔊 試聴</button>
+      </div>
+      <label>利用時間の初期値（分）</label>
+      <input type="number" id="defaultDuration" min="1" step="1" placeholder="例: 60">
+      <p class="error" id="defaultDurationError"></p>
+      <div class="modal-actions">
+        <button id="settingsClose" class="btn-primary">閉じる</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 履歴・CSV出力モーダル -->
+  <div id="historyOverlay" class="overlay hidden">
+    <div class="modal modal-wide">
+      <h2>履歴・CSV出力</h2>
+      <div class="history-controls">
+        <label>期間</label>
+        <input type="date" id="historyFrom">
+        <span>〜</span>
+        <input type="date" id="historyTo">
+        <button id="historySearch">検索</button>
+        <a id="historyDownload" href="#" class="btn-primary btn-link">CSVダウンロード</a>
+      </div>
+      <div class="history-table-wrap">
+        <table id="historyTable">
+          <thead>
+            <tr>
+              <th>日付</th><th>部屋</th><th>担当</th><th>開始</th><th>終了予定</th><th>実退室</th><th>状態</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="modal-actions">
+        <button id="historyClose">閉じる</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- マスタ管理モーダル -->
+  <div id="adminOverlay" class="overlay hidden">
+    <div class="modal modal-wide">
+      <h2>マスタ管理</h2>
+      <div class="admin-columns">
+        <div class="admin-col">
+          <h3>部屋</h3>
+          <ul id="adminRoomList" class="admin-list"></ul>
+          <div class="admin-add">
+            <input type="text" id="adminRoomName" placeholder="部屋名（例: 109）">
+            <button id="adminRoomAdd">追加</button>
+          </div>
+        </div>
+        <div class="admin-col">
+          <h3>スタッフ</h3>
+          <ul id="adminStaffList" class="admin-list"></ul>
+          <div class="admin-add">
+            <input type="text" id="adminStaffName" placeholder="スタッフ名">
+            <button id="adminStaffAdd">追加</button>
+          </div>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button id="adminClose">閉じる</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
