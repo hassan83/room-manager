@@ -683,8 +683,10 @@ document.getElementById('settingsClose').addEventListener('click', () => {
 const notificationToggle = document.getElementById('notificationToggle');
 const notificationHint = document.getElementById('notificationHint');
 
+// 未設定（一度も操作していない）の場合は「ON」を既定値にする
 function getNotificationsEnabled() {
-  return localStorage.getItem('notificationsEnabled') === 'true';
+  const saved = localStorage.getItem('notificationsEnabled');
+  return saved === null ? true : saved === 'true';
 }
 
 function setNotificationsEnabled(v) {
@@ -707,6 +709,24 @@ function updateNotificationUi() {
   notificationHint.textContent = '';
 }
 updateNotificationUi();
+
+// デスクトップ通知は既定でON扱いだが、実際に鳴らすにはブラウザの通知許可が必須（設定のチェックを
+// 手動でON/OFFしただけでは許可は下りない）。設定を開かなくても済むよう、まだ許可・拒否のどちらも
+// 選ばれていない（初回起動時など）場合は、ページ読み込み時に一度だけ許可ダイアログを出しておく。
+// ※ブラウザによっては、ユーザー操作を伴わない要求だと表示を抑制する場合があるため、
+// 　その場合は設定画面のチェックボックスを操作したときに改めて要求する。
+async function requestNotificationPermissionIfDefault() {
+  if (!('Notification' in window)) return;
+  if (Notification.permission !== 'default') return; // 既に許可・拒否済みなら何もしない
+  if (localStorage.getItem('notificationsEnabled') === 'false') return; // 明示的にOFFにしている場合は聞かない
+  try {
+    await Notification.requestPermission();
+  } catch (e) {
+    // 無視（設定画面から改めて操作してもらえば良い）
+  }
+  updateNotificationUi();
+}
+requestNotificationPermissionIfDefault();
 
 notificationToggle.addEventListener('change', async () => {
   if (!('Notification' in window)) return;
