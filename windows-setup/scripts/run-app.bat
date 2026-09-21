@@ -7,6 +7,11 @@ REM Use bundled Node.js (node-runtime) if present, otherwise fall back to PATH.
 set "NODE_EXE=%SCRIPT_DIR%node-runtime\node.exe"
 if not exist "%NODE_EXE%" set "NODE_EXE=node"
 
+REM Check GitHub for an update before starting (skips silently if offline; never blocks startup for long).
+if exist "%SCRIPT_DIR%update-check.js" (
+  "%NODE_EXE%" "%SCRIPT_DIR%update-check.js" >> "%SCRIPT_DIR%update-check.log" 2>&1
+)
+
 start "room-manager-server" /min "%NODE_EXE%" "%SCRIPT_DIR%server.js"
 
 REM Wait for the server to come up.

@@ -7,7 +7,7 @@ cd "$(dirname "$0")"
 
 rm -rf app
 mkdir -p app
-cp ../server.js ../db.js ../routes.js ../package.json app/
+cp ../server.js ../db.js ../routes.js ../package.json ../update-check.js app/
 cp -r ../public app/
 
 cd ..
