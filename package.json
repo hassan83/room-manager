@@ -1,6 +1,6 @@
 {
   "name": "room-manager",
-  "version": "1.8.2",
+  "version": "1.8.3",
   "description": "部屋の空室管理Webアプリ（キャバクラ等の個室管理用）",
   "main": "server.js",
   "scripts": {

@@ -72,7 +72,7 @@ btnThemeToggle.addEventListener('click', () => {
 function pad(n) { return String(n).padStart(2, '0'); }
 
 function formatClock(d) {
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
 function formatRemaining(ms) {
