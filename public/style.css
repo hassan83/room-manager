@@ -409,6 +409,8 @@ th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--border);
 
 .admin-columns { display: flex; gap: 24px; }
 .admin-col { flex: 1; }
+.changelog-title { display: flex; align-items: center; gap: 10px; }
+.changelog-title-icon { width: 32px; height: 32px; border-radius: 8px; }
 .changelog-current { font-size: 13px; color: var(--text-secondary); margin: 0 0 12px; }
 .changelog-body { max-height: 400px; overflow-y: auto; font-size: 14px; }
 .changelog-body h3 { font-size: 15px; margin: 16px 0 6px; }
