@@ -20,27 +20,23 @@ function clearAlarmSilence(sessionId) {
 }
 
 // 退室ボタンの2段階確認（誤操作防止のため、1回目は確認メッセージに変わるだけで、
-// 2回目を押した時点で実際に退室処理を行う。一定時間操作がなければ自動的に元に戻す）
-const checkoutConfirmTimers = new Map(); // session_id -> timeoutId
-const CHECKOUT_CONFIRM_TIMEOUT_MS = 4000;
+// 2回目を押した時点で実際に退室処理を行う）。
+// ※以前は数秒操作がないと自動的に元の表示へ戻す仕組みを入れていたが、
+// 　実際の運用では1回目を押してから2回目を押すまでに数秒以上かかることが多く、
+// 　その間に確認状態が勝手に解除されて「2回押しても退室できない」状態になっていたため廃止。
+// 　解除は「実際に退室処理を行ったとき」または「同じ部屋の他の操作をしたとき」のみ。
+const checkoutConfirmPending = new Set(); // 確認待ち状態のsession_idの集合
 
 function isCheckoutConfirmPending(sessionId) {
-  return checkoutConfirmTimers.has(sessionId);
+  return checkoutConfirmPending.has(sessionId);
 }
 
 function setCheckoutConfirmPending(sessionId) {
-  clearCheckoutConfirmPending(sessionId);
-  const timer = setTimeout(() => {
-    checkoutConfirmTimers.delete(sessionId);
-    renderRooms();
-  }, CHECKOUT_CONFIRM_TIMEOUT_MS);
-  checkoutConfirmTimers.set(sessionId, timer);
+  checkoutConfirmPending.add(sessionId);
 }
 
 function clearCheckoutConfirmPending(sessionId) {
-  const timer = checkoutConfirmTimers.get(sessionId);
-  if (timer) clearTimeout(timer);
-  checkoutConfirmTimers.delete(sessionId);
+  checkoutConfirmPending.delete(sessionId);
 }
 
 // ---------- テーマ切り替え ----------
@@ -500,6 +496,8 @@ document.getElementById('roomGrid').addEventListener('click', async (e) => {
       });
       // 時間変更後、1コール・時間超過のタイミングが変わるためアラームの停止状態をリセットする
       clearAlarmSilence(Number(btn.dataset.sessionId));
+      // 時間調整した場合は退室するつもりがなくなったとみなし、確認待ち状態も解除する
+      clearCheckoutConfirmPending(Number(btn.dataset.sessionId));
       await loadRooms();
     }
   } catch (err) {
