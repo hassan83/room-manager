@@ -51,6 +51,8 @@ const SYNC_FILES = [
   'public/sounds/success1.mp3',
   'public/sounds/warning1.mp3',
   'public/sounds/electronic-roulette-flashing1.mp3',
+  'public/sounds/dog-bark1.mp3',
+  'public/sounds/cat-meow1.mp3',
 ];
 
 // 同期対象ファイルの一覧を、同期先コミット（latestSha）自身のsync-manifest.jsonから取得する。

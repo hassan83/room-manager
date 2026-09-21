@@ -203,11 +203,15 @@ defaultDurationInput.addEventListener('change', () => {
   setDefaultDuration(value);
 });
 
-// ---------- ファイル再生の通知音（効果音ラボ https://soundeffect-lab.info/ の素材を「操作音」として組み込み） ----------
+// ---------- ファイル再生の通知音 ----------
+// success1 / warning1 / roulette-flash1 は効果音ラボ（https://soundeffect-lab.info/）の素材を
+// 「操作音」として組み込んだもの。dog-bark1 / cat-meow1 はユーザーが追加した音源。
 const SOUND_FILES = {
   success1: 'sounds/success1.mp3',
   warning1: 'sounds/warning1.mp3',
   'roulette-flash1': 'sounds/electronic-roulette-flashing1.mp3',
+  'dog-bark1': 'sounds/dog-bark1.mp3',
+  'cat-meow1': 'sounds/cat-meow1.mp3',
 };
 const audioBufferCache = {};
 

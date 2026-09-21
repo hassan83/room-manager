@@ -16,6 +16,8 @@
     "public/favicon.ico",
     "public/sounds/success1.mp3",
     "public/sounds/warning1.mp3",
-    "public/sounds/electronic-roulette-flashing1.mp3"
+    "public/sounds/electronic-roulette-flashing1.mp3",
+    "public/sounds/dog-bark1.mp3",
+    "public/sounds/cat-meow1.mp3"
   ]
 }
