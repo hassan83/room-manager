@@ -107,6 +107,14 @@ button:active { transform: scale(0.98); }
 }
 .btn-danger:hover { background: var(--danger-hover); }
 
+.btn-danger-confirm {
+  animation: checkout-confirm-pulse 1s ease-in-out infinite;
+}
+@keyframes checkout-confirm-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
 select, input[type="text"], input[type="date"], input[type="number"] {
   font-size: 15px;
   padding: 10px;

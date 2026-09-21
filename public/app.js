@@ -19,6 +19,30 @@ function clearAlarmSilence(sessionId) {
   alarmSilence.delete(sessionId);
 }
 
+// 退室ボタンの2段階確認（誤操作防止のため、1回目は確認メッセージに変わるだけで、
+// 2回目を押した時点で実際に退室処理を行う。一定時間操作がなければ自動的に元に戻す）
+const checkoutConfirmTimers = new Map(); // session_id -> timeoutId
+const CHECKOUT_CONFIRM_TIMEOUT_MS = 4000;
+
+function isCheckoutConfirmPending(sessionId) {
+  return checkoutConfirmTimers.has(sessionId);
+}
+
+function setCheckoutConfirmPending(sessionId) {
+  clearCheckoutConfirmPending(sessionId);
+  const timer = setTimeout(() => {
+    checkoutConfirmTimers.delete(sessionId);
+    renderRooms();
+  }, CHECKOUT_CONFIRM_TIMEOUT_MS);
+  checkoutConfirmTimers.set(sessionId, timer);
+}
+
+function clearCheckoutConfirmPending(sessionId) {
+  const timer = checkoutConfirmTimers.get(sessionId);
+  if (timer) clearTimeout(timer);
+  checkoutConfirmTimers.delete(sessionId);
+}
+
 // ---------- テーマ切り替え ----------
 
 const btnThemeToggle = document.getElementById('btnThemeToggle');
@@ -386,6 +410,9 @@ function renderRoomCard(room) {
   const warningItemClass = warningRemainingMs > 0 ? 'is-active' : 'is-muted';
   const checkoutItemClass = warningRemainingMs > 0 ? 'is-muted' : 'is-active';
 
+  // 退室ボタンの2段階確認：1回目のクリックではまだ退室処理をせず、ボタンの文言を確認メッセージに変える
+  const checkoutPending = isCheckoutConfirmPending(session.session_id);
+
   return `
     <div class="room-card state-${state}">
       <div class="room-card-header">
@@ -421,7 +448,7 @@ function renderRoomCard(room) {
           <button class="btn-plus" data-action="adjust-time" data-target="checkout" data-session-id="${session.session_id}" data-minutes="5">+5分</button>
         </div>
       </div>
-      <button class="btn-danger" data-action="checkout" data-session-id="${session.session_id}">退室</button>
+      <button class="btn-danger${checkoutPending ? ' btn-danger-confirm' : ''}" data-action="checkout" data-session-id="${session.session_id}">${checkoutPending ? '本当に退出させますか？' : '退室'}</button>
     </div>`;
 }
 
@@ -453,9 +480,17 @@ document.getElementById('roomGrid').addEventListener('click', async (e) => {
       else if (btn.dataset.target === 'overtime') silence.overtime = true;
       renderRooms(); // 次の1秒を待たずにボタンを即座に消す
     } else if (action === 'checkout') {
-      if (!confirm('この部屋を退室処理しますか？')) return;
-      await apiFetch(`/api/sessions/${btn.dataset.sessionId}/checkout`, { method: 'POST' });
-      clearAlarmSilence(Number(btn.dataset.sessionId));
+      const sessionId = Number(btn.dataset.sessionId);
+      if (!isCheckoutConfirmPending(sessionId)) {
+        // 1回目のクリック：まだ退室処理はせず、ボタンの文言を確認メッセージに変えるだけ
+        setCheckoutConfirmPending(sessionId);
+        renderRooms();
+        return;
+      }
+      // 2回目のクリック：実際に退室処理を行う
+      clearCheckoutConfirmPending(sessionId);
+      await apiFetch(`/api/sessions/${sessionId}/checkout`, { method: 'POST' });
+      clearAlarmSilence(sessionId);
       await loadRooms();
     } else if (action === 'adjust-time') {
       await apiFetch(`/api/sessions/${btn.dataset.sessionId}/adjust-time`, {
