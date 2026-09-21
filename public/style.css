@@ -245,6 +245,14 @@ main { padding: 24px; }
   padding: 16px;
   border: 2px solid var(--border);
   background: var(--surface);
+  display: flex;
+  flex-direction: column;
+}
+/* 「前回:」表示の有無やアラーム停止ボタンの有無で内容の高さが変わっても、
+   一番下の操作ボタン（入室登録／取消・スタート／退室）が同じ行内のカード間で
+   縦位置が揃うように、常に一番下に寄せる */
+.room-card > *:last-child {
+  margin-top: auto;
 }
 .room-card.state-vacant { border-color: var(--color-vacant-border); }
 .room-card.state-waiting { border-color: var(--color-waiting-border); }
