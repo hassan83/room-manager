@@ -77,6 +77,7 @@ function registerRoutes(router, db) {
     } catch (e) {
       // 自動アップデート未実行（開発環境など）の場合はnullのまま
     }
+    res.setHeader('Cache-Control', 'no-store');
     sendJson(res, 200, { version, commit });
   });
 
@@ -87,7 +88,8 @@ function registerRoutes(router, db) {
     } catch (e) {
       // CHANGELOG.mdが無い場合はエラーメッセージのまま返す
     }
-    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+    // アップデート直後に古い内容がブラウザキャッシュから表示され続けることがないようにする
+    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
     res.end(content);
   });
 
