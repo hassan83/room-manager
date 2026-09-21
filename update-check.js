@@ -27,6 +27,8 @@ const SYNC_FILES = [
   'public/index.html',
   'public/app.js',
   'public/style.css',
+  'public/favicon.svg',
+  'public/favicon.ico',
   'public/sounds/success1.mp3',
   'public/sounds/warning1.mp3',
   'public/sounds/electronic-roulette-flashing1.mp3',
