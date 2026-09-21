@@ -16,13 +16,20 @@ const STAGING_DIR = path.join(INSTALL_DIR, '.update-staging');
 const PER_REQUEST_TIMEOUT_MS = 5000;
 const OVERALL_TIMEOUT_MS = 15000; // 起動が長時間止まらないよう、全体の上限時間を設ける
 
-// 自動更新の対象ファイル（build-package.sh がappフォルダに入れるものと揃える）
+// 自動更新の対象ファイル一覧（フォールバック用）。
+// ※本来の一覧は同期先コミットの sync-manifest.json から毎回取得する（getSyncFiles参照）。
+// 　これは、同期対象ファイルの一覧そのものにファイルを追加した回の更新では、
+// 　「今動いている（まだ古い）update-check.jsが持つ古い一覧」で1回目のダウンロードが
+// 　行われてしまい、新しく追加したファイル自体はその回では同期されない、という
+// 　問題を避けるため（新しい一覧はsha一致時点で以後二度と取得されなくなるので、
+// 　1回でも取りこぼすと以後ずっと同期されないままになってしまう）。
 const SYNC_FILES = [
   'server.js',
   'db.js',
   'routes.js',
   'package.json',
   'update-check.js',
+  'sync-manifest.json',
   'CHANGELOG.md',
   'public/index.html',
   'public/app.js',
@@ -33,6 +40,20 @@ const SYNC_FILES = [
   'public/sounds/warning1.mp3',
   'public/sounds/electronic-roulette-flashing1.mp3',
 ];
+
+// 同期対象ファイルの一覧を、同期先コミット（latestSha）自身のsync-manifest.jsonから取得する。
+// 取得できなければ、このファイルに埋め込まれた一覧（SYNC_FILES）にフォールバックする。
+async function getSyncFiles(sha) {
+  try {
+    const url = `https://raw.githubusercontent.com/${REPO}/${sha}/sync-manifest.json`;
+    const buf = await httpGet(url);
+    const manifest = JSON.parse(buf.toString('utf8'));
+    if (Array.isArray(manifest.files) && manifest.files.length > 0) return manifest.files;
+  } catch (e) {
+    log(`同期対象ファイル一覧の取得に失敗したため、内蔵の一覧を使用します（${e.message}）`);
+  }
+  return SYNC_FILES;
+}
 
 function log(msg) {
   console.log(`[update-check] ${msg}`);
@@ -118,11 +139,16 @@ async function run() {
 
   log(`更新を検出しました（${currentSha ? currentSha.slice(0, 7) : '未記録'} → ${latestSha.slice(0, 7)}）。ダウンロードします...`);
 
+  // 同期対象ファイルの一覧は、同期先コミット自身のsync-manifest.jsonから取得する
+  // （今動いているスクリプトの古い一覧を使うと、新しく追加したファイルがその回だけ
+  // 　取りこぼされ、以後同じsha同士の比較になり永久に同期されなくなるため）
+  const filesToSync = await getSyncFiles(latestSha);
+
   // まず一時フォルダに全ファイルをダウンロードし、すべて成功してから本番に反映する
   // （途中で失敗した場合に、新旧ファイルが混在した壊れた状態になるのを防ぐため）
   try {
     fs.rmSync(STAGING_DIR, { recursive: true, force: true });
-    for (const relPath of SYNC_FILES) {
+    for (const relPath of filesToSync) {
       const url = `https://raw.githubusercontent.com/${REPO}/${latestSha}/${relPath}`;
       const content = await httpGet(url);
       const stagedPath = destPathFor(STAGING_DIR, relPath);
@@ -130,7 +156,7 @@ async function run() {
       fs.writeFileSync(stagedPath, content);
     }
 
-    for (const relPath of SYNC_FILES) {
+    for (const relPath of filesToSync) {
       const stagedPath = destPathFor(STAGING_DIR, relPath);
       const destPath = destPathFor(INSTALL_DIR, relPath);
       fs.mkdirSync(path.dirname(destPath), { recursive: true });
