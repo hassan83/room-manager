@@ -40,13 +40,44 @@ function initDb(filePath) {
       FOREIGN KEY (staff_id) REFERENCES staff(staff_id)
     );
   `);
-  ensureWarningColumn(db);
-  ensureStaffIdNullable(db);
-  ensureWaitingSupport(db);
-  ensureSortOrder(db);
-  closeOutLingeringCleaningSessions(db);
-  seedIfEmpty(db);
+  // 以降のマイグレーション処理は、データベースファイルが読み取り専用の場合でも
+  // アプリ自体は起動できる（ダッシュボードの閲覧はできる）ようにするため、
+  // まとめてtry/catchする。スキーマが既に最新であれば通常は書き込みが発生しないが、
+  // closeOutLingeringCleaningSessionsのUPDATE文だけは対象0件でも書き込みを試みるため、
+  // これを個別に保護しないと読み取り専用データベースでは起動そのものが失敗してしまう。
+  try {
+    ensureWarningColumn(db);
+    ensureStaffIdNullable(db);
+    ensureWaitingSupport(db);
+    ensureSortOrder(db);
+    closeOutLingeringCleaningSessions(db);
+    seedIfEmpty(db);
+  } catch (e) {
+    console.error('[起動時] データベースの初期化処理でエラーが発生しました。読み取り専用の状態で起動を続けます。');
+    console.error(`  詳細: ${e.message}`);
+  }
+  checkWritable(db);
   return db;
+}
+
+// 起動時に実際に書き込みができるか確認する（テーブルやカラムが既に揃っている場合、
+// ここまでのCREATE TABLE IF NOT EXISTS等は実際には書き込みを行わずに素通りすることがあり、
+// データファイルが読み取り専用でも起動自体は成功してしまうため）。
+// 書き込めない場合も起動自体は継続し、コンソールに分かりやすい警告を出すだけに留める
+// （実際の操作時にはserver.js側でも分かりやすいエラーメッセージに変換して表示する）。
+function checkWritable(db) {
+  try {
+    // BEGIN IMMEDIATE + ROLLBACKだけでは実際のディスク書き込みが発生せず、
+    // 読み取り専用ファイルでも成功してしまう（検知できない）ため、
+    // 実際に値を書き戻す形でPRAGMA user_versionへの書き込みを試す
+    // （同じ値を書き戻すだけなので実質的な副作用はない）
+    const current = db.prepare('PRAGMA user_version').get().user_version;
+    db.exec(`PRAGMA user_version = ${current}`);
+  } catch (e) {
+    console.error('[起動時チェック] データベースファイル（data.db）に書き込めません。');
+    console.error('  data.dbが読み取り専用になっているか、インストールフォルダの書き込み権限が無い可能性があります。');
+    console.error(`  詳細: ${e.message}`);
+  }
 }
 
 // マスタ管理での並び順設定に対応するため、rooms/staffにsort_order列を追加する。

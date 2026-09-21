@@ -58,6 +58,26 @@ class Router {
   }
 }
 
+// SQLite等が投げる生のエラーメッセージ（英語で原因が分かりにくい）を、
+// 店舗スタッフでも対処法が分かるような日本語メッセージに置き換える。
+// 該当しないエラーはそのまま返す。
+function friendlyErrorMessage(err) {
+  const msg = (err && err.message) || '';
+  if (/readonly database/i.test(msg)) {
+    return 'データベースファイル（data.db）が読み取り専用になっているため保存できません。' +
+      'data.dbを右クリック→プロパティで「読み取り専用」のチェックが入っていないか、' +
+      'インストールフォルダに書き込み権限があるかを確認してください。';
+  }
+  if (/database is locked/i.test(msg)) {
+    return 'データベースが他の処理で使用中のため保存できませんでした。少し待ってからもう一度お試しください。' +
+      '繰り返し発生する場合は、部屋管理ボードが複数起動していないか確認してください。';
+  }
+  if (/disk (i\/o error|full)/i.test(msg)) {
+    return 'ディスクの空き容量不足、またはディスクの異常により保存できませんでした。パソコンの空き容量を確認してください。';
+  }
+  return msg;
+}
+
 function sendJson(res, statusCode, obj) {
   const body = JSON.stringify(obj);
   res.writeHead(statusCode, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -126,7 +146,7 @@ async function main() {
       }
     } catch (err) {
       const statusCode = err.statusCode || 400;
-      sendJson(res, statusCode, { error: err.message || 'エラーが発生しました' });
+      sendJson(res, statusCode, { error: friendlyErrorMessage(err) || 'エラーが発生しました' });
     }
   });
 
