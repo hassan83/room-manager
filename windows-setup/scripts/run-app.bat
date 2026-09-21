@@ -17,16 +17,7 @@ start "room-manager-server" /min "%NODE_EXE%" "%SCRIPT_DIR%server.js"
 REM Wait for the server to come up.
 timeout /t 3 /nobreak >nul
 
-REM Look for Chrome and launch in kiosk mode; otherwise open the default browser.
-set "CHROME="
-if exist "%ProgramFiles%\Google\Chrome\Application\chrome.exe" set "CHROME=%ProgramFiles%\Google\Chrome\Application\chrome.exe"
-if not defined CHROME if exist "%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe" set "CHROME=%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe"
-if not defined CHROME if exist "%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe" set "CHROME=%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe"
-
-if defined CHROME (
-  start "" "%CHROME%" --kiosk --kiosk-printing http://localhost:3000
-) else (
-  start "" http://localhost:3000
-)
+REM Open the dashboard in the default browser as a normal window (not fullscreen/kiosk mode).
+start "" http://localhost:3000
 
 endlocal
