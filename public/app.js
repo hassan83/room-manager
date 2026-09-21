@@ -475,7 +475,7 @@ document.getElementById('roomGrid').addEventListener('click', async (e) => {
   const action = btn.dataset.action;
   try {
     if (action === 'checkin') {
-      await openCheckinModal(Number(btn.dataset.roomId));
+      await openCheckinModal(Number(btn.dataset.roomId), btn);
     } else if (action === 'start') {
       await apiFetch(`/api/sessions/${btn.dataset.sessionId}/start`, { method: 'POST' });
       await loadRooms();
@@ -540,8 +540,50 @@ setInterval(loadRooms, 5000);
 // ---------- 入室登録モーダル ----------
 
 const checkinOverlay = document.getElementById('checkinOverlay');
+const checkinModal = checkinOverlay.querySelector('.modal');
 
-async function openCheckinModal(preselectRoomId) {
+// モーダルを画面中央ではなく、クリックされたボタン（入室登録ボタン）の近くに表示する。
+// マウスポインタ自体を動かすことはブラウザからはできないため、その代替として
+// モーダル側をポインタ・視線の近くに寄せることで同様の使い勝手を狙っている。
+function positionModalNearAnchor(modal, anchorEl) {
+  modal.classList.add('modal-anchored');
+  // 実際のサイズを計測するため、いったん見えない状態で仮配置する（ちらつき防止）
+  modal.style.visibility = 'hidden';
+  modal.style.top = '0px';
+  modal.style.left = '0px';
+
+  const margin = 12;
+  const anchorRect = anchorEl.getBoundingClientRect();
+  const modalRect = modal.getBoundingClientRect();
+
+  let top = anchorRect.bottom + margin;
+  let left = anchorRect.left;
+
+  // 画面右端・下端からはみ出す場合は位置を調整する
+  if (left + modalRect.width > window.innerWidth - margin) {
+    left = window.innerWidth - modalRect.width - margin;
+  }
+  if (left < margin) left = margin;
+  if (top + modalRect.height > window.innerHeight - margin) {
+    // ボタンの下に収まらない場合は上側に表示する
+    top = anchorRect.top - modalRect.height - margin;
+    if (top < margin) top = margin;
+  }
+
+  modal.style.top = `${top}px`;
+  modal.style.left = `${left}px`;
+  modal.style.visibility = '';
+}
+
+// アンカーの指定がない場合（画面上部の「＋入室登録」ボタンなど）は、従来通り画面中央に表示する
+function resetModalPosition(modal) {
+  modal.classList.remove('modal-anchored');
+  modal.style.top = '';
+  modal.style.left = '';
+  modal.style.visibility = '';
+}
+
+async function openCheckinModal(preselectRoomId, anchorEl) {
   const vacantRooms = rooms.filter((r) => r.status === 'vacant');
   const roomSelect = document.getElementById('checkinRoom');
   roomSelect.innerHTML = vacantRooms.map((r) => `<option value="${r.room_id}">${escapeHtml(r.room_name)}</option>`).join('');
@@ -554,6 +596,12 @@ async function openCheckinModal(preselectRoomId) {
   document.getElementById('checkinDuration').value = getDefaultDuration();
   document.getElementById('checkinError').textContent = '';
   checkinOverlay.classList.remove('hidden');
+
+  if (anchorEl) {
+    positionModalNearAnchor(checkinModal, anchorEl);
+  } else {
+    resetModalPosition(checkinModal);
+  }
 
   // 部屋を指定して開いた場合、その部屋の前回担当スタッフを初期選択にする
   if (preselectRoomId) {
@@ -569,7 +617,7 @@ async function openCheckinModal(preselectRoomId) {
   }
 }
 
-document.getElementById('btnCheckin').addEventListener('click', () => { openCheckinModal(); });
+document.getElementById('btnCheckin').addEventListener('click', (e) => { openCheckinModal(undefined, e.currentTarget); });
 document.getElementById('checkinCancel').addEventListener('click', () => checkinOverlay.classList.add('hidden'));
 
 document.getElementById('checkinSubmit').addEventListener('click', async () => {

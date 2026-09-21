@@ -381,6 +381,11 @@ main { padding: 24px; }
   overflow-y: auto;
 }
 .modal-wide { width: 640px; max-width: 92vw; }
+.modal.modal-anchored {
+  position: fixed;
+  margin: 0;
+  max-height: calc(100vh - 24px);
+}
 .modal h2 { margin-top: 0; font-size: 18px; }
 .modal h3 { font-size: 15px; margin: 0 0 8px; }
 .modal label { display: block; font-size: 13px; color: var(--text-secondary); margin: 12px 0 4px; }
