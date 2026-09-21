@@ -661,8 +661,69 @@ document.querySelectorAll('.admin-list').forEach((list) => {
   });
 });
 
+// ---------- バージョン・更新履歴 ----------
+
+const changelogOverlay = document.getElementById('changelogOverlay');
+
+// CHANGELOG.mdの簡易パーサー（## 見出し / - 箇条書きのみ対応）
+function renderChangelog(markdown) {
+  const lines = markdown.split('\n');
+  let html = '';
+  let inList = false;
+  const closeList = () => { if (inList) { html += '</ul>'; inList = false; } };
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    if (line.startsWith('## ')) {
+      closeList();
+      html += `<h3>${escapeHtml(line.slice(3))}</h3>`;
+    } else if (line.startsWith('# ')) {
+      // 先頭の大見出し（「更新履歴」）は現在バージョン表示と重複するため省略
+      continue;
+    } else if (line.startsWith('- ')) {
+      if (!inList) { html += '<ul>'; inList = true; }
+      html += `<li>${escapeHtml(line.slice(2))}</li>`;
+    } else {
+      closeList();
+      html += `<p>${escapeHtml(line)}</p>`;
+    }
+  }
+  closeList();
+  return html;
+}
+
+async function loadVersionInfo() {
+  try {
+    const info = await apiFetch('/api/version');
+    const label = info.version ? `v${info.version}` : 'v?';
+    document.getElementById('btnVersion').textContent = label;
+    document.getElementById('changelogCurrentVersion').textContent =
+      info.commit ? `現在のバージョン: v${info.version}（${info.commit.slice(0, 7)}）` : `現在のバージョン: v${info.version}`;
+  } catch (err) {
+    document.getElementById('btnVersion').textContent = 'v?';
+  }
+}
+
+document.getElementById('btnVersion').addEventListener('click', async () => {
+  changelogOverlay.classList.remove('hidden');
+  const body = document.getElementById('changelogBody');
+  body.textContent = '読み込み中...';
+  try {
+    const res = await fetch('/api/changelog');
+    const text = await res.text();
+    body.innerHTML = renderChangelog(text);
+  } catch (err) {
+    body.textContent = '更新履歴を読み込めませんでした';
+  }
+});
+
+document.getElementById('changelogClose').addEventListener('click', () => {
+  changelogOverlay.classList.add('hidden');
+});
+
 // ---------- 初期化 ----------
 
 (async function init() {
-  await Promise.all([loadStaff(), loadRooms()]);
+  await Promise.all([loadStaff(), loadRooms(), loadVersionInfo()]);
 })();

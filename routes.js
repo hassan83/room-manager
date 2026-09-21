@@ -1,7 +1,13 @@
 // APIルーティング定義
 'use strict';
 
+const fs = require('node:fs');
+const path = require('node:path');
 const db_ = require('./db');
+
+const PACKAGE_JSON_PATH = path.join(__dirname, 'package.json');
+const CHANGELOG_PATH = path.join(__dirname, 'CHANGELOG.md');
+const UPDATE_VERSION_PATH = path.join(__dirname, '.update-version');
 
 const STATUS_LABEL = {
   waiting: '待機中',
@@ -54,6 +60,35 @@ function registerRoutes(router, db) {
 
   router.get('/api/rooms', ({ res, sendJson }) => {
     sendJson(res, 200, db_.listRoomsWithStatus(db));
+  });
+
+  // ---------- バージョン情報 ----------
+
+  router.get('/api/version', ({ res, sendJson }) => {
+    let version = null;
+    try {
+      version = JSON.parse(fs.readFileSync(PACKAGE_JSON_PATH, 'utf8')).version;
+    } catch (e) {
+      // package.jsonが読めない場合もバージョン不明のまま続行する
+    }
+    let commit = null;
+    try {
+      commit = fs.readFileSync(UPDATE_VERSION_PATH, 'utf8').trim() || null;
+    } catch (e) {
+      // 自動アップデート未実行（開発環境など）の場合はnullのまま
+    }
+    sendJson(res, 200, { version, commit });
+  });
+
+  router.get('/api/changelog', ({ res }) => {
+    let content = '更新履歴を読み込めませんでした';
+    try {
+      content = fs.readFileSync(CHANGELOG_PATH, 'utf8');
+    } catch (e) {
+      // CHANGELOG.mdが無い場合はエラーメッセージのまま返す
+    }
+    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end(content);
   });
 
   // ---------- スタッフ（入室登録の選択肢用） ----------

@@ -18,6 +18,7 @@
   <header class="topbar">
     <div class="clock" id="clock">--:--</div>
     <div class="topbar-buttons">
+      <button id="btnVersion" class="btn-version" title="更新履歴を見る">v---</button>
       <button id="btnThemeToggle" aria-label="ダークモード切り替え">🌙</button>
       <button id="btnSettings">⚙️ 設定</button>
       <button id="btnHistory">履歴・CSV</button>
@@ -146,6 +147,18 @@
       </div>
       <div class="modal-actions">
         <button id="adminClose">閉じる</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 更新履歴モーダル -->
+  <div id="changelogOverlay" class="overlay hidden">
+    <div class="modal modal-wide">
+      <h2>更新履歴</h2>
+      <p id="changelogCurrentVersion" class="changelog-current"></p>
+      <div id="changelogBody" class="changelog-body"></div>
+      <div class="modal-actions">
+        <button id="changelogClose" class="btn-primary">閉じる</button>
       </div>
     </div>
   </div>

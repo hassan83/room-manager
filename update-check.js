@@ -23,6 +23,7 @@ const SYNC_FILES = [
   'routes.js',
   'package.json',
   'update-check.js',
+  'CHANGELOG.md',
   'public/index.html',
   'public/app.js',
   'public/style.css',
