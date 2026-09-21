@@ -16,8 +16,22 @@ function getAlarmSilence(sessionId) {
   return alarmSilence.get(sessionId);
 }
 
+// デスクトップ通知（画面が最小化・非表示のときにアラームが鳴ったことを知らせる）を
+// フェーズ開始時に1回だけ出すための記録。`${session_id}:${phase}` の集合。
+const notifiedAlarms = new Set();
+
+function notifiedAlarmKey(sessionId, phase) {
+  return `${sessionId}:${phase}`;
+}
+
+function clearNotifiedAlarm(sessionId, phase) {
+  notifiedAlarms.delete(notifiedAlarmKey(sessionId, phase));
+}
+
 function clearAlarmSilence(sessionId) {
   alarmSilence.delete(sessionId);
+  clearNotifiedAlarm(sessionId, 'warning');
+  clearNotifiedAlarm(sessionId, 'overtime');
 }
 
 // 1コールのアラームを止めるまでは「退室まで」の残り時間を進めない（止めた時点を起点に、
@@ -303,8 +317,10 @@ function tickAlarms() {
     const silence = getAlarmSilence(room.session.session_id);
     if (state === 'warning' && !silence.warning) {
       playAlertBeep('warning');
+      maybeNotifyAlarm(room, 'warning');
     } else if (state === 'overtime' && !silence.overtime) {
       playAlertBeep('overtime');
+      maybeNotifyAlarm(room, 'overtime');
     }
   }
 }
@@ -526,6 +542,7 @@ document.getElementById('roomGrid').addEventListener('click', async (e) => {
         // 退室（時間超過）の時刻のみ変わるため、時間超過アラームの停止状態だけリセットする。
         // 1コールをすでに止めている場合は、その状態（退室までのカウント開始時刻）は維持する
         getAlarmSilence(sessionId).overtime = false;
+        clearNotifiedAlarm(sessionId, 'overtime');
       }
       // 時間調整した場合は退室するつもりがなくなったとみなし、確認待ち状態も解除する
       clearCheckoutConfirmPending(sessionId);
@@ -660,6 +677,76 @@ document.getElementById('btnSettings').addEventListener('click', () => {
 document.getElementById('settingsClose').addEventListener('click', () => {
   settingsOverlay.classList.add('hidden');
 });
+
+// ---------- デスクトップ通知（画面最小化中もアラームに気付けるように） ----------
+
+const notificationToggle = document.getElementById('notificationToggle');
+const notificationHint = document.getElementById('notificationHint');
+
+function getNotificationsEnabled() {
+  return localStorage.getItem('notificationsEnabled') === 'true';
+}
+
+function setNotificationsEnabled(v) {
+  localStorage.setItem('notificationsEnabled', v ? 'true' : 'false');
+}
+
+function updateNotificationUi() {
+  if (!('Notification' in window)) {
+    notificationToggle.checked = false;
+    notificationToggle.disabled = true;
+    notificationHint.textContent = 'このブラウザはデスクトップ通知に対応していません';
+    return;
+  }
+  if (Notification.permission === 'denied') {
+    notificationToggle.checked = false;
+    notificationHint.textContent = 'ブラウザ側で通知がブロックされています。ブラウザの設定（サイトの権限）から許可してください';
+    return;
+  }
+  notificationToggle.checked = getNotificationsEnabled() && Notification.permission === 'granted';
+  notificationHint.textContent = '';
+}
+updateNotificationUi();
+
+notificationToggle.addEventListener('change', async () => {
+  if (!('Notification' in window)) return;
+  if (!notificationToggle.checked) {
+    setNotificationsEnabled(false);
+    updateNotificationUi();
+    return;
+  }
+  if (Notification.permission === 'granted') {
+    setNotificationsEnabled(true);
+  } else if (Notification.permission !== 'denied') {
+    const permission = await Notification.requestPermission();
+    setNotificationsEnabled(permission === 'granted');
+  }
+  updateNotificationUi();
+});
+
+// 画面が非表示（最小化・他のタブがアクティブ）のときだけ通知を出す。
+// 表示中はダッシュボード自体で状態が見えているため、通知は不要（うるさくしない）。
+// 同じフェーズで何度も通知しないよう、鳴り始めた最初の1回だけ表示する（notifiedAlarms参照）。
+function maybeNotifyAlarm(room, phase) {
+  if (!getNotificationsEnabled()) return;
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  if (!document.hidden) return;
+  const key = notifiedAlarmKey(room.session.session_id, phase);
+  if (notifiedAlarms.has(key)) return;
+  notifiedAlarms.add(key);
+  const body = phase === 'warning'
+    ? `${room.room_name}：1コールです`
+    : `${room.room_name}：退室予定時刻を過ぎています`;
+  try {
+    const notification = new Notification('部屋管理ボード', { body, tag: key });
+    notification.onclick = () => {
+      window.focus();
+      notification.close();
+    };
+  } catch (e) {
+    console.warn('デスクトップ通知の表示に失敗しました', e);
+  }
+}
 
 // ---------- 履歴・CSV出力モーダル ----------
 

@@ -212,6 +212,26 @@ select, input[type="text"], input[type="date"], input[type="number"] {
 .sound-type-row select { flex: 1; }
 .sound-type-row button { width: auto; white-space: nowrap; }
 
+.modal .notification-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--text-primary);
+  margin: 4px 0 0;
+}
+.notification-toggle-row input[type="checkbox"] {
+  width: auto;
+  min-height: auto;
+  flex-shrink: 0;
+}
+.modal .notification-hint {
+  color: var(--text-secondary);
+  font-size: 12px;
+  margin: 4px 0 0;
+  min-height: 14px;
+}
+
 main { padding: 24px; }
 
 .room-grid {

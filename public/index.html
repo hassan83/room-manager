@@ -98,6 +98,12 @@
       <label>利用時間の初期値（分）</label>
       <input type="number" id="defaultDuration" min="1" step="1" placeholder="例: 60">
       <p class="error" id="defaultDurationError"></p>
+      <label>デスクトップ通知</label>
+      <label class="notification-toggle-row">
+        <input type="checkbox" id="notificationToggle">
+        画面が最小化されていてもアラームをデスクトップ通知で知らせる
+      </label>
+      <p class="notification-hint" id="notificationHint"></p>
       <div class="modal-actions">
         <button id="settingsClose" class="btn-primary">閉じる</button>
       </div>
