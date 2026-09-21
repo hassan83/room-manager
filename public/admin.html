@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>マスタ管理 - 部屋管理ボード</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="alternate icon" href="favicon.ico">
+<link rel="stylesheet" href="style.css">
+<script>
+  (function () {
+    var saved = localStorage.getItem('theme');
+    var theme = saved || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    document.documentElement.setAttribute('data-theme', theme);
+  })();
+</script>
+</head>
+<body>
+
+  <header class="topbar">
+    <div class="brand">
+      <img src="favicon.svg" alt="" class="brand-icon">
+      <h1 class="page-title">マスタ管理</h1>
+    </div>
+    <div class="topbar-buttons">
+      <a href="index.html" class="btn-back">← ダッシュボードに戻る</a>
+    </div>
+  </header>
+
+  <main class="admin-page">
+    <div class="admin-tabs" role="tablist">
+      <button type="button" class="admin-tab is-active" data-tab="rooms" role="tab" aria-selected="true">部屋</button>
+      <button type="button" class="admin-tab" data-tab="staff" role="tab" aria-selected="false">スタッフ</button>
+    </div>
+
+    <p class="admin-hint">項目をドラッグして並び替えられます。並び順はダッシュボードや入室登録の選択肢にも反映されます。</p>
+
+    <section class="admin-panel" data-panel="rooms">
+      <ul id="adminRoomList" class="admin-list"></ul>
+      <div class="admin-add">
+        <input type="text" id="adminRoomName" placeholder="部屋名（例: 109）">
+        <button id="adminRoomAdd">追加</button>
+      </div>
+    </section>
+
+    <section class="admin-panel hidden" data-panel="staff">
+      <ul id="adminStaffList" class="admin-list"></ul>
+      <div class="admin-add">
+        <input type="text" id="adminStaffName" placeholder="スタッフ名">
+        <button id="adminStaffAdd">追加</button>
+      </div>
+    </section>
+  </main>
+
+  <script src="admin.js"></script>
+</body>
+</html>

@@ -184,9 +184,10 @@ function registerRoutes(router, db) {
     sendJson(res, 200, db_.updateRoom(db, Number(params.id), body));
   });
 
-  // 部屋の並び順を1つ上／下に入れ替える（マスタ管理画面の▲▼ボタン用）
-  router.post('/api/admin/rooms/:id/move', ({ res, sendJson, params, body }) => {
-    db_.moveRoom(db, Number(params.id), body.direction);
+  // 部屋の並び順をドラッグ&ドロップ後の順序（部屋IDの配列）で一括更新する（マスタ管理画面用）
+  router.post('/api/admin/rooms/reorder', ({ res, sendJson, body }) => {
+    if (!Array.isArray(body.order)) return sendJson(res, 400, { error: '並び順の指定が不正です' });
+    db_.reorderRooms(db, body.order);
     sendJson(res, 200, { ok: true });
   });
 
@@ -217,9 +218,10 @@ function registerRoutes(router, db) {
     sendJson(res, 200, db_.updateStaff(db, Number(params.id), body));
   });
 
-  // スタッフの並び順を1つ上／下に入れ替える（マスタ管理画面の▲▼ボタン用）
-  router.post('/api/admin/staff/:id/move', ({ res, sendJson, params, body }) => {
-    db_.moveStaff(db, Number(params.id), body.direction);
+  // スタッフの並び順をドラッグ&ドロップ後の順序（スタッフIDの配列）で一括更新する（マスタ管理画面用）
+  router.post('/api/admin/staff/reorder', ({ res, sendJson, body }) => {
+    if (!Array.isArray(body.order)) return sendJson(res, 400, { error: '並び順の指定が不正です' });
+    db_.reorderStaff(db, body.order);
     sendJson(res, 200, { ok: true });
   });
 

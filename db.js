@@ -251,18 +251,18 @@ function updateRoom(db, roomId, { room_name, capacity, is_active } = {}) {
   return db.prepare('SELECT * FROM rooms WHERE room_id = ?').get(roomId);
 }
 
-// 部屋の並び順を、有効な部屋の中で1つ上（up）／下（down）の部屋と入れ替える
-function moveRoom(db, roomId, direction) {
-  const rooms = db.prepare('SELECT room_id, sort_order FROM rooms WHERE is_active = 1 ORDER BY sort_order, room_name').all();
-  const idx = rooms.findIndex((r) => r.room_id === roomId);
-  if (idx === -1) return;
-  const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
-  if (swapIdx < 0 || swapIdx >= rooms.length) return;
-  const a = rooms[idx];
-  const b = rooms[swapIdx];
+// 部屋の並び順を、渡されたIDの並び（ドラッグ&ドロップ後の順序）の通りに一括設定する
+function reorderRooms(db, roomIds) {
+  const ids = (roomIds || []).map(Number).filter((n) => Number.isInteger(n));
   const stmt = db.prepare('UPDATE rooms SET sort_order = ? WHERE room_id = ?');
-  stmt.run(b.sort_order, a.room_id);
-  stmt.run(a.sort_order, b.room_id);
+  db.exec('BEGIN');
+  try {
+    ids.forEach((id, i) => stmt.run((i + 1) * 10, id));
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
 }
 
 function hasOpenSessionForRoom(db, roomId) {
@@ -305,18 +305,18 @@ function updateStaff(db, staffId, { staff_name, is_active } = {}) {
   return db.prepare('SELECT * FROM staff WHERE staff_id = ?').get(staffId);
 }
 
-// スタッフの並び順を、有効なスタッフの中で1つ上（up）／下（down）のスタッフと入れ替える
-function moveStaff(db, staffId, direction) {
-  const staffRows = db.prepare('SELECT staff_id, sort_order FROM staff WHERE is_active = 1 ORDER BY sort_order, staff_name').all();
-  const idx = staffRows.findIndex((s) => s.staff_id === staffId);
-  if (idx === -1) return;
-  const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
-  if (swapIdx < 0 || swapIdx >= staffRows.length) return;
-  const a = staffRows[idx];
-  const b = staffRows[swapIdx];
+// スタッフの並び順を、渡されたIDの並び（ドラッグ&ドロップ後の順序）の通りに一括設定する
+function reorderStaff(db, staffIds) {
+  const ids = (staffIds || []).map(Number).filter((n) => Number.isInteger(n));
   const stmt = db.prepare('UPDATE staff SET sort_order = ? WHERE staff_id = ?');
-  stmt.run(b.sort_order, a.staff_id);
-  stmt.run(a.sort_order, b.staff_id);
+  db.exec('BEGIN');
+  try {
+    ids.forEach((id, i) => stmt.run((i + 1) * 10, id));
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
 }
 
 function deactivateStaff(db, staffId) {
@@ -475,14 +475,14 @@ module.exports = {
   listAllRooms,
   createRoom,
   updateRoom,
-  moveRoom,
+  reorderRooms,
   deactivateRoom,
   hasOpenSessionForRoom,
   listActiveStaff,
   listAllStaff,
   createStaff,
   updateStaff,
-  moveStaff,
+  reorderStaff,
   deactivateStaff,
   createSession,
   startSession,

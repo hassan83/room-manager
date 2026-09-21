@@ -33,6 +33,8 @@ const SYNC_FILES = [
   'CHANGELOG.md',
   'public/index.html',
   'public/app.js',
+  'public/admin.html',
+  'public/admin.js',
   'public/style.css',
   'public/favicon.svg',
   'public/favicon.ico',
