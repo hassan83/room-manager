@@ -12,6 +12,10 @@ const REPO = 'hassan83/room-manager';
 const BRANCH = 'main';
 const INSTALL_DIR = __dirname;
 const VERSION_FILE = path.join(INSTALL_DIR, '.update-version');
+// 前回の同期で実際に配置したファイル一覧の記録。バージョン番号（.update-version）が
+// 最新と一致していても、店舗PC側で何らかの理由によりファイルが欠けている場合に、
+// スタッフの手作業（ファイル削除など）を一切必要とせず、次回起動時に自動で再同期させるために使う。
+const SYNCED_FILES_RECORD = path.join(INSTALL_DIR, '.update-synced-files.json');
 const STAGING_DIR = path.join(INSTALL_DIR, '.update-staging');
 const PER_REQUEST_TIMEOUT_MS = 5000;
 const OVERALL_TIMEOUT_MS = 20000; // 起動が長時間止まらないよう、全体の上限時間を設ける
@@ -139,6 +143,21 @@ function destPathFor(baseDir, relPath) {
   return path.join(baseDir, ...relPath.split('/'));
 }
 
+// 前回同期時に記録したファイル一覧を読み込む（記録が無い・壊れている場合はnull）
+function readSyncedFilesRecord() {
+  try {
+    const list = JSON.parse(fs.readFileSync(SYNCED_FILES_RECORD, 'utf8'));
+    return Array.isArray(list) && list.length > 0 ? list : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+// 記録されているファイルが実際にインストール先に全て存在するかを確認する（ネットワーク不要）
+function allFilesPresent(relPaths) {
+  return relPaths.every((relPath) => fs.existsSync(destPathFor(INSTALL_DIR, relPath)));
+}
+
 async function run() {
   let latestSha;
   try {
@@ -152,11 +171,18 @@ async function run() {
 
   const currentSha = fs.existsSync(VERSION_FILE) ? fs.readFileSync(VERSION_FILE, 'utf8').trim() : null;
   if (currentSha === latestSha) {
-    log('最新バージョンです');
-    return;
+    // バージョン番号だけでなく、前回同期したファイルが実際に全て存在するかも確認する。
+    // （通信の一時的な失敗などで一部ファイルだけ取りこぼされたまま「完了」記録されてしまった
+    // 　場合でも、スタッフに手作業をお願いすることなく次回起動時に自動で復旧させるため）
+    const recordedFiles = readSyncedFilesRecord();
+    if (recordedFiles && allFilesPresent(recordedFiles)) {
+      log('最新バージョンです');
+      return;
+    }
+    log('バージョンは最新の記録ですが、ファイルの欠落を検出したため念のため再同期します');
+  } else {
+    log(`更新を検出しました（${currentSha ? currentSha.slice(0, 7) : '未記録'} → ${latestSha.slice(0, 7)}）。ダウンロードします...`);
   }
-
-  log(`更新を検出しました（${currentSha ? currentSha.slice(0, 7) : '未記録'} → ${latestSha.slice(0, 7)}）。ダウンロードします...`);
 
   // 同期対象ファイルの一覧は、同期先コミット自身のsync-manifest.jsonから取得する
   // （今動いているスクリプトの古い一覧を使うと、新しく追加したファイルがその回だけ
@@ -183,6 +209,7 @@ async function run() {
     }
 
     fs.writeFileSync(VERSION_FILE, latestSha, 'utf8');
+    fs.writeFileSync(SYNCED_FILES_RECORD, JSON.stringify(filesToSync), 'utf8');
     log('更新が完了しました');
   } catch (e) {
     log(`更新中にエラーが発生したため、既存のファイルで起動します（${e.message}）`);
