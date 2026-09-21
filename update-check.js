@@ -14,7 +14,13 @@ const INSTALL_DIR = __dirname;
 const VERSION_FILE = path.join(INSTALL_DIR, '.update-version');
 const STAGING_DIR = path.join(INSTALL_DIR, '.update-staging');
 const PER_REQUEST_TIMEOUT_MS = 5000;
-const OVERALL_TIMEOUT_MS = 15000; // 起動が長時間止まらないよう、全体の上限時間を設ける
+const OVERALL_TIMEOUT_MS = 20000; // 起動が長時間止まらないよう、全体の上限時間を設ける
+const MANIFEST_FETCH_ATTEMPTS = 2; // sync-manifest.json取得の最大試行回数（一時的な通信失敗による取りこぼしを防ぐ）
+const MANIFEST_RETRY_DELAY_MS = 500;
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 // 自動更新の対象ファイル一覧（フォールバック用）。
 // ※本来の一覧は同期先コミットの sync-manifest.json から毎回取得する（getSyncFiles参照）。
@@ -44,16 +50,27 @@ const SYNC_FILES = [
 ];
 
 // 同期対象ファイルの一覧を、同期先コミット（latestSha）自身のsync-manifest.jsonから取得する。
-// 取得できなければ、このファイルに埋め込まれた一覧（SYNC_FILES）にフォールバックする。
+// 一時的な通信失敗で取りこぼす（＝以後そのshaと一致する限り二度と再取得されない）ことがないよう、
+// 数回まで再試行してから、それでも失敗した場合のみこのファイルに埋め込まれた一覧（SYNC_FILES）に
+// フォールバックする。
 async function getSyncFiles(sha) {
-  try {
-    const url = `https://raw.githubusercontent.com/${REPO}/${sha}/sync-manifest.json`;
-    const buf = await httpGet(url);
-    const manifest = JSON.parse(buf.toString('utf8'));
-    if (Array.isArray(manifest.files) && manifest.files.length > 0) return manifest.files;
-  } catch (e) {
-    log(`同期対象ファイル一覧の取得に失敗したため、内蔵の一覧を使用します（${e.message}）`);
+  const url = `https://raw.githubusercontent.com/${REPO}/${sha}/sync-manifest.json`;
+  let lastError;
+  for (let attempt = 1; attempt <= MANIFEST_FETCH_ATTEMPTS; attempt++) {
+    try {
+      const buf = await httpGet(url);
+      const manifest = JSON.parse(buf.toString('utf8'));
+      if (Array.isArray(manifest.files) && manifest.files.length > 0) return manifest.files;
+      lastError = new Error('sync-manifest.jsonの形式が不正です');
+    } catch (e) {
+      lastError = e;
+    }
+    if (attempt < MANIFEST_FETCH_ATTEMPTS) {
+      log(`同期対象ファイル一覧の取得に失敗しました（${attempt}/${MANIFEST_FETCH_ATTEMPTS}回目: ${lastError.message}）。再試行します...`);
+      await delay(MANIFEST_RETRY_DELAY_MS);
+    }
   }
+  log(`同期対象ファイル一覧の取得に${MANIFEST_FETCH_ATTEMPTS}回失敗したため、内蔵の一覧を使用します（${lastError.message}）`);
   return SYNC_FILES;
 }
 
