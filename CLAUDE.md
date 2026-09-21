@@ -37,4 +37,3 @@ GitHubにpushしさえすれば、店舗PC起動時の自動アップデート�
 
 - 外部npmパッケージは一切使わない。Node.js組み込み機能のみ（`node:http` / `node:sqlite` /
   `node:https` / `node:fs` / `node:path`）で動作させる。
-- リモートは `https://github.com/hassan83/room-manager.git`（public repo）。
