@@ -43,9 +43,30 @@ function initDb(filePath) {
   ensureWarningColumn(db);
   ensureStaffIdNullable(db);
   ensureWaitingSupport(db);
+  ensureSortOrder(db);
   closeOutLingeringCleaningSessions(db);
   seedIfEmpty(db);
   return db;
+}
+
+// マスタ管理での並び順設定に対応するため、rooms/staffにsort_order列を追加する。
+// 既存データは、これまでの並び順（名前順）をそのまま初期値として割り当てる
+// （10刻みにしておくことで、後から間に挿入したい場合にも対応しやすくする）
+function ensureSortOrder(db) {
+  const roomCols = db.prepare('PRAGMA table_info(rooms)').all();
+  if (!roomCols.some((c) => c.name === 'sort_order')) {
+    db.exec('ALTER TABLE rooms ADD COLUMN sort_order INTEGER');
+    const rooms = db.prepare('SELECT room_id FROM rooms ORDER BY room_name').all();
+    const stmt = db.prepare('UPDATE rooms SET sort_order = ? WHERE room_id = ?');
+    rooms.forEach((r, i) => stmt.run((i + 1) * 10, r.room_id));
+  }
+  const staffCols = db.prepare('PRAGMA table_info(staff)').all();
+  if (!staffCols.some((c) => c.name === 'sort_order')) {
+    db.exec('ALTER TABLE staff ADD COLUMN sort_order INTEGER');
+    const staffRows = db.prepare('SELECT staff_id FROM staff ORDER BY staff_name').all();
+    const stmt = db.prepare('UPDATE staff SET sort_order = ? WHERE staff_id = ?');
+    staffRows.forEach((s, i) => stmt.run((i + 1) * 10, s.staff_id));
+  }
 }
 
 // 清掃中ステータスの廃止に伴い、旧バージョンで清掃待ちのまま残っていたセッションを
@@ -148,13 +169,13 @@ function ensureWarningColumn(db) {
 function seedIfEmpty(db) {
   const roomCount = db.prepare('SELECT COUNT(*) AS c FROM rooms').get().c;
   if (roomCount === 0) {
-    const insert = db.prepare('INSERT INTO rooms (room_name, capacity, is_active) VALUES (?, ?, 1)');
-    ['101', '102', '103', '104', '105', '106', '107', '108'].forEach((name) => insert.run(name, 4));
+    const insert = db.prepare('INSERT INTO rooms (room_name, capacity, is_active, sort_order) VALUES (?, ?, 1, ?)');
+    ['101', '102', '103', '104', '105', '106', '107', '108'].forEach((name, i) => insert.run(name, 4, (i + 1) * 10));
   }
   const staffCount = db.prepare('SELECT COUNT(*) AS c FROM staff').get().c;
   if (staffCount === 0) {
-    const insert = db.prepare('INSERT INTO staff (staff_name, is_active) VALUES (?, 1)');
-    ['ユキ', 'レナ', 'ミサキ', 'ハルカ'].forEach((name) => insert.run(name));
+    const insert = db.prepare('INSERT INTO staff (staff_name, is_active, sort_order) VALUES (?, 1, ?)');
+    ['ユキ', 'レナ', 'ミサキ', 'ハルカ'].forEach((name, i) => insert.run(name, (i + 1) * 10));
   }
 }
 
@@ -175,7 +196,7 @@ function listRoomsWithStatus(db) {
     )
     LEFT JOIN staff lastStaff ON lastStaff.staff_id = lastSession.staff_id
     WHERE r.is_active = 1
-    ORDER BY r.room_name
+    ORDER BY r.sort_order, r.room_name
   `).all();
 
   return rows.map((row) => ({
@@ -198,18 +219,50 @@ function listRoomsWithStatus(db) {
 }
 
 function listAllRooms(db) {
-  return db.prepare('SELECT * FROM rooms ORDER BY room_name').all();
+  return db.prepare('SELECT * FROM rooms ORDER BY sort_order, room_name').all();
+}
+
+function nextSortOrder(db, table) {
+  const row = db.prepare(`SELECT MAX(sort_order) AS m FROM ${table}`).get();
+  return (row.m || 0) + 10;
 }
 
 function createRoom(db, { room_name, capacity }) {
-  const result = db.prepare('INSERT INTO rooms (room_name, capacity, is_active) VALUES (?, ?, 1)').run(room_name, capacity || null);
+  const sortOrder = nextSortOrder(db, 'rooms');
+  const result = db.prepare('INSERT INTO rooms (room_name, capacity, is_active, sort_order) VALUES (?, ?, 1, ?)')
+    .run(room_name, capacity || null, sortOrder);
   return db.prepare('SELECT * FROM rooms WHERE room_id = ?').get(result.lastInsertRowid);
 }
 
-function updateRoom(db, roomId, { room_name, capacity, is_active }) {
+// room_name/capacity/is_activeは指定されたものだけを更新し、指定が無い項目は既存値を維持する
+// （マスタ管理の名称編集など、一部の項目だけを送るケースに対応するため）
+function updateRoom(db, roomId, { room_name, capacity, is_active } = {}) {
+  const existing = db.prepare('SELECT * FROM rooms WHERE room_id = ?').get(roomId);
+  if (!existing) {
+    const err = new Error('部屋が見つかりません');
+    err.statusCode = 404;
+    throw err;
+  }
+  const newName = room_name !== undefined ? room_name : existing.room_name;
+  const newCapacity = capacity !== undefined ? (capacity || null) : existing.capacity;
+  const newActive = is_active !== undefined ? (is_active ? 1 : 0) : existing.is_active;
   db.prepare('UPDATE rooms SET room_name = ?, capacity = ?, is_active = ? WHERE room_id = ?')
-    .run(room_name, capacity ?? null, is_active ? 1 : 0, roomId);
+    .run(newName, newCapacity, newActive, roomId);
   return db.prepare('SELECT * FROM rooms WHERE room_id = ?').get(roomId);
+}
+
+// 部屋の並び順を、有効な部屋の中で1つ上（up）／下（down）の部屋と入れ替える
+function moveRoom(db, roomId, direction) {
+  const rooms = db.prepare('SELECT room_id, sort_order FROM rooms WHERE is_active = 1 ORDER BY sort_order, room_name').all();
+  const idx = rooms.findIndex((r) => r.room_id === roomId);
+  if (idx === -1) return;
+  const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+  if (swapIdx < 0 || swapIdx >= rooms.length) return;
+  const a = rooms[idx];
+  const b = rooms[swapIdx];
+  const stmt = db.prepare('UPDATE rooms SET sort_order = ? WHERE room_id = ?');
+  stmt.run(b.sort_order, a.room_id);
+  stmt.run(a.sort_order, b.room_id);
 }
 
 function hasOpenSessionForRoom(db, roomId) {
@@ -224,22 +277,46 @@ function deactivateRoom(db, roomId) {
 // ---------- Staff ----------
 
 function listActiveStaff(db) {
-  return db.prepare('SELECT * FROM staff WHERE is_active = 1 ORDER BY staff_name').all();
+  return db.prepare('SELECT * FROM staff WHERE is_active = 1 ORDER BY sort_order, staff_name').all();
 }
 
 function listAllStaff(db) {
-  return db.prepare('SELECT * FROM staff ORDER BY staff_name').all();
+  return db.prepare('SELECT * FROM staff ORDER BY sort_order, staff_name').all();
 }
 
 function createStaff(db, { staff_name }) {
-  const result = db.prepare('INSERT INTO staff (staff_name, is_active) VALUES (?, 1)').run(staff_name);
+  const sortOrder = nextSortOrder(db, 'staff');
+  const result = db.prepare('INSERT INTO staff (staff_name, is_active, sort_order) VALUES (?, 1, ?)').run(staff_name, sortOrder);
   return db.prepare('SELECT * FROM staff WHERE staff_id = ?').get(result.lastInsertRowid);
 }
 
-function updateStaff(db, staffId, { staff_name, is_active }) {
+// staff_name/is_activeは指定されたものだけを更新し、指定が無い項目は既存値を維持する
+function updateStaff(db, staffId, { staff_name, is_active } = {}) {
+  const existing = db.prepare('SELECT * FROM staff WHERE staff_id = ?').get(staffId);
+  if (!existing) {
+    const err = new Error('スタッフが見つかりません');
+    err.statusCode = 404;
+    throw err;
+  }
+  const newName = staff_name !== undefined ? staff_name : existing.staff_name;
+  const newActive = is_active !== undefined ? (is_active ? 1 : 0) : existing.is_active;
   db.prepare('UPDATE staff SET staff_name = ?, is_active = ? WHERE staff_id = ?')
-    .run(staff_name, is_active ? 1 : 0, staffId);
+    .run(newName, newActive, staffId);
   return db.prepare('SELECT * FROM staff WHERE staff_id = ?').get(staffId);
+}
+
+// スタッフの並び順を、有効なスタッフの中で1つ上（up）／下（down）のスタッフと入れ替える
+function moveStaff(db, staffId, direction) {
+  const staffRows = db.prepare('SELECT staff_id, sort_order FROM staff WHERE is_active = 1 ORDER BY sort_order, staff_name').all();
+  const idx = staffRows.findIndex((s) => s.staff_id === staffId);
+  if (idx === -1) return;
+  const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+  if (swapIdx < 0 || swapIdx >= staffRows.length) return;
+  const a = staffRows[idx];
+  const b = staffRows[swapIdx];
+  const stmt = db.prepare('UPDATE staff SET sort_order = ? WHERE staff_id = ?');
+  stmt.run(b.sort_order, a.staff_id);
+  stmt.run(a.sort_order, b.staff_id);
 }
 
 function deactivateStaff(db, staffId) {
@@ -398,12 +475,14 @@ module.exports = {
   listAllRooms,
   createRoom,
   updateRoom,
+  moveRoom,
   deactivateRoom,
   hasOpenSessionForRoom,
   listActiveStaff,
   listAllStaff,
   createStaff,
   updateStaff,
+  moveStaff,
   deactivateStaff,
   createSession,
   startSession,

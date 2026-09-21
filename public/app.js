@@ -661,9 +661,41 @@ document.getElementById('btnAdmin').addEventListener('click', async () => {
 });
 document.getElementById('adminClose').addEventListener('click', async () => {
   adminOverlay.classList.add('hidden');
+  editingRoomId = null;
+  editingStaffId = null;
   await loadStaff();
   await loadRooms();
 });
+
+// 編集中の項目（部屋・スタッフそれぞれ1件まで）。一覧の再描画をまたいで状態を保持する
+let editingRoomId = null;
+let editingStaffId = null;
+
+// マスタ管理の一覧1行分のHTMLを生成する（部屋・スタッフ共通）
+function renderAdminItem({ type, id, name, isFirst, isLast, editing }) {
+  if (editing) {
+    return `
+      <li class="admin-item is-editing">
+        <input type="text" class="admin-edit-input" data-type="${type}" data-id="${id}" value="${escapeHtml(name)}">
+        <div class="admin-item-actions">
+          <button data-action="save-edit" data-type="${type}" data-id="${id}">保存</button>
+          <button data-action="cancel-edit" data-type="${type}" data-id="${id}">キャンセル</button>
+        </div>
+      </li>`;
+  }
+  return `
+    <li class="admin-item">
+      <div class="admin-item-order">
+        <button class="btn-move" data-action="move-up" data-type="${type}" data-id="${id}" ${isFirst ? 'disabled' : ''} aria-label="上に移動">▲</button>
+        <button class="btn-move" data-action="move-down" data-type="${type}" data-id="${id}" ${isLast ? 'disabled' : ''} aria-label="下に移動">▼</button>
+      </div>
+      <span class="admin-item-name">${escapeHtml(name)}</span>
+      <div class="admin-item-actions">
+        <button data-action="edit" data-type="${type}" data-id="${id}">編集</button>
+        <button data-action="delete" data-type="${type}" data-id="${id}">削除</button>
+      </div>
+    </li>`;
+}
 
 async function refreshAdminLists() {
   const [adminRooms, adminStaff] = await Promise.all([
@@ -671,15 +703,31 @@ async function refreshAdminLists() {
     apiFetch('/api/admin/staff'),
   ]);
 
-  document.getElementById('adminRoomList').innerHTML = adminRooms
-    .filter((r) => r.is_active)
-    .map((r) => `<li>${escapeHtml(r.room_name)}<button data-type="room" data-id="${r.room_id}">削除</button></li>`)
+  const activeRooms = adminRooms.filter((r) => r.is_active);
+  const activeStaff = adminStaff.filter((s) => s.is_active);
+
+  document.getElementById('adminRoomList').innerHTML = activeRooms
+    .map((r, i) => renderAdminItem({
+      type: 'room', id: r.room_id, name: r.room_name,
+      isFirst: i === 0, isLast: i === activeRooms.length - 1,
+      editing: editingRoomId === r.room_id,
+    }))
     .join('');
 
-  document.getElementById('adminStaffList').innerHTML = adminStaff
-    .filter((s) => s.is_active)
-    .map((s) => `<li>${escapeHtml(s.staff_name)}<button data-type="staff" data-id="${s.staff_id}">削除</button></li>`)
+  document.getElementById('adminStaffList').innerHTML = activeStaff
+    .map((s, i) => renderAdminItem({
+      type: 'staff', id: s.staff_id, name: s.staff_name,
+      isFirst: i === 0, isLast: i === activeStaff.length - 1,
+      editing: editingStaffId === s.staff_id,
+    }))
     .join('');
+
+  // 編集モードの入力欄があれば、開いた直後にすぐ入力できるようフォーカスする
+  const editingInput = document.querySelector('.admin-edit-input');
+  if (editingInput) {
+    editingInput.focus();
+    editingInput.select();
+  }
 }
 
 document.getElementById('adminRoomAdd').addEventListener('click', async () => {
@@ -708,15 +756,68 @@ document.getElementById('adminStaffAdd').addEventListener('click', async () => {
 
 document.querySelectorAll('.admin-list').forEach((list) => {
   list.addEventListener('click', async (e) => {
-    const btn = e.target.closest('button[data-type]');
+    const btn = e.target.closest('button[data-action]');
     if (!btn) return;
-    if (!confirm('削除しますか？')) return;
-    try {
-      const endpoint = btn.dataset.type === 'room' ? 'rooms' : 'staff';
-      await apiFetch(`/api/admin/${endpoint}/${btn.dataset.id}`, { method: 'DELETE' });
+    const { action, type, id } = btn.dataset;
+    const numId = Number(id);
+    const endpoint = type === 'room' ? 'rooms' : 'staff';
+
+    if (action === 'delete') {
+      if (!confirm('削除しますか？')) return;
+      try {
+        await apiFetch(`/api/admin/${endpoint}/${numId}`, { method: 'DELETE' });
+        await refreshAdminLists();
+      } catch (err) {
+        alert(err.message);
+      }
+    } else if (action === 'edit') {
+      if (type === 'room') editingRoomId = numId; else editingStaffId = numId;
       await refreshAdminLists();
-    } catch (err) {
-      alert(err.message);
+    } else if (action === 'cancel-edit') {
+      if (type === 'room') editingRoomId = null; else editingStaffId = null;
+      await refreshAdminLists();
+    } else if (action === 'save-edit') {
+      const input = list.querySelector(`.admin-edit-input[data-type="${type}"][data-id="${id}"]`);
+      const newName = input.value.trim();
+      if (!newName) {
+        alert(type === 'room' ? '部屋名を入力してください' : 'スタッフ名を入力してください');
+        return;
+      }
+      try {
+        const field = type === 'room' ? 'room_name' : 'staff_name';
+        await apiFetch(`/api/admin/${endpoint}/${numId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ [field]: newName }),
+        });
+        if (type === 'room') editingRoomId = null; else editingStaffId = null;
+        await refreshAdminLists();
+      } catch (err) {
+        alert(err.message);
+      }
+    } else if (action === 'move-up' || action === 'move-down') {
+      try {
+        await apiFetch(`/api/admin/${endpoint}/${numId}/move`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ direction: action === 'move-up' ? 'up' : 'down' }),
+        });
+        await refreshAdminLists();
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+  });
+
+  // 編集中の入力欄でEnter＝保存、Escape＝キャンセル
+  list.addEventListener('keydown', (e) => {
+    if (!e.target.classList.contains('admin-edit-input')) return;
+    const { type, id } = e.target.dataset;
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      list.querySelector(`button[data-action="save-edit"][data-type="${type}"][data-id="${id}"]`)?.click();
+    } else if (e.key === 'Escape') {
+      list.querySelector(`button[data-action="cancel-edit"][data-type="${type}"][data-id="${id}"]`)?.click();
     }
   });
 });

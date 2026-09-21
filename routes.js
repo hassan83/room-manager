@@ -178,7 +178,16 @@ function registerRoutes(router, db) {
   });
 
   router.put('/api/admin/rooms/:id', ({ res, sendJson, params, body }) => {
+    if (body.room_name !== undefined && !body.room_name.trim()) {
+      return sendJson(res, 400, { error: '部屋名は必須です' });
+    }
     sendJson(res, 200, db_.updateRoom(db, Number(params.id), body));
+  });
+
+  // 部屋の並び順を1つ上／下に入れ替える（マスタ管理画面の▲▼ボタン用）
+  router.post('/api/admin/rooms/:id/move', ({ res, sendJson, params, body }) => {
+    db_.moveRoom(db, Number(params.id), body.direction);
+    sendJson(res, 200, { ok: true });
   });
 
   router.delete('/api/admin/rooms/:id', ({ res, sendJson, params }) => {
@@ -202,7 +211,16 @@ function registerRoutes(router, db) {
   });
 
   router.put('/api/admin/staff/:id', ({ res, sendJson, params, body }) => {
+    if (body.staff_name !== undefined && !body.staff_name.trim()) {
+      return sendJson(res, 400, { error: 'スタッフ名は必須です' });
+    }
     sendJson(res, 200, db_.updateStaff(db, Number(params.id), body));
+  });
+
+  // スタッフの並び順を1つ上／下に入れ替える（マスタ管理画面の▲▼ボタン用）
+  router.post('/api/admin/staff/:id/move', ({ res, sendJson, params, body }) => {
+    db_.moveStaff(db, Number(params.id), body.direction);
+    sendJson(res, 200, { ok: true });
   });
 
   router.delete('/api/admin/staff/:id', ({ res, sendJson, params }) => {
