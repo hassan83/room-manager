@@ -32,6 +32,9 @@
   --accent-hover: #0d47a1;
   --danger: #c62828;
   --danger-hover: #a41f1f;
+  --danger-confirm: #ff6f00;
+  --danger-confirm-alt: #ffb300;
+  --danger-confirm-shadow: rgba(255, 111, 0, 0.45);
 }
 
 :root[data-theme="dark"] {
@@ -68,6 +71,9 @@
   --accent-hover: #6ba7e0;
   --danger: #e05a56;
   --danger-hover: #ea7975;
+  --danger-confirm: #ffa726;
+  --danger-confirm-alt: #ffcc80;
+  --danger-confirm-shadow: rgba(255, 167, 38, 0.5);
 }
 
 * { box-sizing: border-box; }
@@ -108,11 +114,22 @@ button:active { transform: scale(0.98); }
 .btn-danger:hover { background: var(--danger-hover); }
 
 .btn-danger-confirm {
-  animation: checkout-confirm-pulse 1s ease-in-out infinite;
+  background: var(--danger-confirm);
+  border-color: var(--danger-confirm);
+  animation: checkout-confirm-pulse 0.8s ease-in-out infinite;
 }
+.btn-danger-confirm:hover { background: var(--danger-confirm-alt); }
 @keyframes checkout-confirm-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.6; }
+  0%, 100% {
+    background: var(--danger-confirm);
+    transform: scale(1);
+    box-shadow: 0 0 0 0 var(--danger-confirm-shadow);
+  }
+  50% {
+    background: var(--danger-confirm-alt);
+    transform: scale(1.04);
+    box-shadow: 0 0 0 8px transparent;
+  }
 }
 
 select, input[type="text"], input[type="date"], input[type="number"] {
