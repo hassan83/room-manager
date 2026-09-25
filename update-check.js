@@ -81,7 +81,11 @@ async function getSyncFiles(sha) {
 }
 
 function log(msg) {
-  console.log(`[update-check] ${msg}`);
+  // 店舗PCのupdate-check.logを見たときに「いつ」の結果か分かるよう日時を付ける
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const ts = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  console.log(`[update-check ${ts}] ${msg}`);
 }
 
 function httpGet(url, { json = false, redirectsLeft = 3 } = {}) {
@@ -160,12 +164,38 @@ function allFilesPresent(relPaths) {
   return relPaths.every((relPath) => fs.existsSync(destPathFor(INSTALL_DIR, relPath)));
 }
 
+// git の smart HTTP（git clone と同じ仕組み）で、ブランチの最新コミットshaを取得する。
+// api.github.com は未認証だと「接続元IPごとに1時間60回」までしか使えず、
+// モバイル回線・共用回線などで他の利用者と同じIPを共有している店舗では
+// 上限超過（HTTP 403）で毎回バージョン確認に失敗し、いつまでも更新されなかった。
+// こちらはそのAPI回数制限の対象外なので、まずこちらを使う。
+async function getLatestShaViaGit() {
+  const buf = await httpGet(`https://github.com/${REPO}.git/info/refs?service=git-upload-pack`);
+  const text = buf.toString('utf8');
+  const m = new RegExp(`([0-9a-f]{40}) refs/heads/${BRANCH}(?:\\n|\\0|$)`, 'm').exec(text);
+  if (!m) throw new Error('ブランチ情報が見つかりませんでした');
+  return m[1];
+}
+
+async function getLatestShaViaApi() {
+  const info = await httpGet(`https://api.github.com/repos/${REPO}/commits/${BRANCH}`, { json: true });
+  if (!info || !info.sha) throw new Error('コミット情報を取得できませんでした');
+  return info.sha;
+}
+
+async function getLatestSha() {
+  try {
+    return await getLatestShaViaGit();
+  } catch (e) {
+    log(`最新バージョンの確認（git）に失敗したため、GitHub APIで再確認します（${e.message}）`);
+  }
+  return getLatestShaViaApi();
+}
+
 async function run() {
   let latestSha;
   try {
-    const info = await httpGet(`https://api.github.com/repos/${REPO}/commits/${BRANCH}`, { json: true });
-    latestSha = info && info.sha;
-    if (!latestSha) throw new Error('コミット情報を取得できませんでした');
+    latestSha = await getLatestSha();
   } catch (e) {
     log(`バージョン確認に失敗したため、既存のファイルで起動します（${e.message}）`);
     return;

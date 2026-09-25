@@ -6,6 +6,7 @@ const http = require('node:http');
 const path = require('node:path');
 const fs = require('node:fs');
 const { URL } = require('node:url');
+const { spawn } = require('node:child_process');
 
 const { initDb } = require('./db');
 const { registerRoutes } = require('./routes');
@@ -13,6 +14,15 @@ const { registerRoutes } = require('./routes');
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const DB_PATH = path.join(__dirname, 'data.db');
+const UPDATE_CHECK_SCRIPT = path.join(__dirname, 'update-check.js');
+const UPDATE_VERSION_PATH = path.join(__dirname, '.update-version');
+const UPDATE_LOG_PATH = path.join(__dirname, 'update-check.log');
+// 起動中も定期的にアップデートを確認する間隔。
+// これまではPC起動（ログオン）時にしか確認しておらず、PCを付けっぱなしにしている店舗では
+// いつまでも古いバージョンのまま動き続けていたため。
+const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
+const LISTEN_RETRY_COUNT = 10;
+const LISTEN_RETRY_DELAY_MS = 1000;
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -115,7 +125,8 @@ function serveStatic(res, pathname) {
       return;
     }
     const ext = path.extname(filePath);
-    res.writeHead(200, { 'Content-Type': MIME_TYPES[ext] || 'application/octet-stream' });
+    // 自動アップデート後に、ブラウザに残った古い画面ファイルが使われ続けないようにする
+    res.writeHead(200, { 'Content-Type': MIME_TYPES[ext] || 'application/octet-stream', 'Cache-Control': 'no-cache' });
     res.end(data);
   });
 }
@@ -150,9 +161,103 @@ async function main() {
     }
   });
 
+  // 自動再起動の直後などで、直前のサーバーがまだポートを解放しきっていない場合に備えて少し待って再試行する
+  let listenRetriesLeft = LISTEN_RETRY_COUNT;
+  server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE' && listenRetriesLeft > 0) {
+      listenRetriesLeft--;
+      setTimeout(() => server.listen(PORT), LISTEN_RETRY_DELAY_MS);
+      return;
+    }
+    console.error(`サーバーを起動できませんでした（${err.message}）`);
+    process.exit(1);
+  });
   server.listen(PORT, () => {
     console.log(`部屋管理サーバー起動: http://localhost:${PORT}`);
   });
+
+  startPeriodicUpdateCheck(server);
+}
+
+function readUpdateVersion() {
+  try {
+    return fs.readFileSync(UPDATE_VERSION_PATH, 'utf8').trim() || null;
+  } catch (e) {
+    return null;
+  }
+}
+
+// 起動中も定期的にupdate-check.jsを実行し、ファイルが更新されていたらサーバーを再起動して反映する。
+// 起動時点のバージョン（.update-version）と比べるので、このサーバーの起動後に
+// 別経路（デスクトップのショートカットからの再起動など）で更新されたファイルも同様に反映される。
+function startPeriodicUpdateCheck(server) {
+  // 開発用のgit作業フォルダでは、編集中のファイルをGitHub上の内容で上書きしないよう無効にする
+  if (fs.existsSync(path.join(__dirname, '.git')) || process.env.ROOM_MANAGER_AUTO_UPDATE === '0') return;
+  if (!fs.existsSync(UPDATE_CHECK_SCRIPT)) return;
+
+  const startedVersion = readUpdateVersion();
+  let running = false;
+
+  const check = () => {
+    if (running) return;
+    running = true;
+    let logFd = null;
+    try {
+      logFd = fs.openSync(UPDATE_LOG_PATH, 'a');
+    } catch (e) {
+      // ログが書けなくても更新確認自体は行う
+    }
+    const child = spawn(process.execPath, [UPDATE_CHECK_SCRIPT], {
+      cwd: __dirname,
+      stdio: ['ignore', logFd ?? 'ignore', logFd ?? 'ignore'],
+      windowsHide: true,
+    });
+    const done = () => {
+      running = false;
+      if (logFd !== null) {
+        try { fs.closeSync(logFd); } catch (e) { /* 無視 */ }
+        logFd = null;
+      }
+    };
+    child.on('error', (e) => {
+      console.error(`アップデート確認を実行できませんでした（${e.message}）`);
+      done();
+    });
+    child.on('exit', () => {
+      done();
+      const current = readUpdateVersion();
+      if (current && current !== startedVersion) {
+        restartServer(server);
+      }
+    });
+  };
+
+  const timer = setInterval(check, UPDATE_CHECK_INTERVAL_MS);
+  timer.unref();
+}
+
+// 新しいファイルで動かすため、自分と同じ内容のサーバーを新たに起動してから終了する
+function restartServer(server) {
+  console.log('アップデートを反映するため、サーバーを再起動します...');
+  const relaunch = () => {
+    try {
+      const child = spawn(process.execPath, [path.join(__dirname, 'server.js')], {
+        cwd: __dirname,
+        detached: true,
+        stdio: 'ignore',
+        windowsHide: true,
+      });
+      child.unref();
+    } catch (e) {
+      // 新しいサーバーを起動できなかった場合は、このサーバーで受付を再開して動かし続ける
+      console.error(`サーバーの再起動に失敗しました（${e.message}）`);
+      server.listen(PORT);
+      return;
+    }
+    process.exit(0);
+  };
+  server.close(relaunch);
+  if (typeof server.closeAllConnections === 'function') server.closeAllConnections();
 }
 
 main();

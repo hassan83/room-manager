@@ -849,9 +849,17 @@ function renderChangelog(markdown) {
   return html;
 }
 
+// この画面を読み込んだ時点のバージョン。サーバー側が自動アップデートされたかの判定に使う
+let loadedVersionKey = null;
+
+function versionKey(info) {
+  return `${info.version || ''}@${info.commit || ''}`;
+}
+
 async function loadVersionInfo() {
   try {
     const info = await apiFetch('/api/version');
+    loadedVersionKey = versionKey(info);
     const label = info.version ? `v${info.version}` : 'v?';
     document.getElementById('btnVersion').textContent = label;
     document.getElementById('changelogCurrentVersion').textContent =
@@ -876,6 +884,31 @@ document.getElementById('btnVersion').addEventListener('click', async () => {
 
 document.getElementById('changelogClose').addEventListener('click', () => {
   changelogOverlay.classList.add('hidden');
+});
+
+// サーバー側が自動アップデートされた後も、開きっぱなしのこの画面は古いままなので、
+// 定期的にバージョンを確認し、変わっていたら画面の更新を促す。
+// （自動で再読み込みすると、ブラウザの仕様でクリックするまでアラーム音が鳴らなくなる
+// 　おそれがあるため、スタッフに「画面を更新する」を押してもらう）
+async function checkServerVersion() {
+  try {
+    const info = await apiFetch('/api/version');
+    if (!loadedVersionKey) {
+      loadedVersionKey = versionKey(info);
+      return;
+    }
+    if (versionKey(info) === loadedVersionKey) return;
+    document.getElementById('updateBannerText').textContent =
+      `新しいバージョン（v${info.version}）に更新されました。「画面を更新する」を押すと反映されます。`;
+    document.getElementById('updateBanner').classList.remove('hidden');
+  } catch (err) {
+    // サーバー再起動中などは次回の確認に任せる
+  }
+}
+setInterval(checkServerVersion, 60 * 1000);
+
+document.getElementById('updateBannerReload').addEventListener('click', () => {
+  location.reload();
 });
 
 // ---------- 初期化 ----------

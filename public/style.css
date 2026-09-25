@@ -168,6 +168,20 @@ select, input[type="text"], input[type="date"], input[type="number"] {
 }
 .topbar-buttons { display: flex; align-items: center; gap: 10px; }
 
+/* 自動アップデートでサーバー側が新しいバージョンになったときのお知らせ */
+.update-banner {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 24px;
+  background: var(--color-warning-bg);
+  color: var(--color-warning-text);
+  border-bottom: 1px solid var(--color-warning-border);
+  font-weight: 600;
+}
+.update-banner.hidden { display: none; }
+
 .btn-version {
   font-size: 12px;
   color: var(--text-secondary);
